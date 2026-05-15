@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WCO Downloader</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --border: #2a2a2a;
+    --accent: #00ff88;
+    --accent2: #ff4444;
+    --warn: #ffaa00;
+    --text: #e8e8e8;
+    --muted: #666;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+
+  h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.4rem;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 40px; }
+  .container { max-width: 760px; margin: 0 auto; }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+    margin-top: 14px;
+  }
+
+  label:first-of-type { margin-top: 0; }
+
+  input[type="text"], input[type="number"], textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type="text"]:focus, input[type="number"]:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 80px; }
+
+  .folder-row { display: flex; gap: 8px; align-items: stretch; }
+  .folder-row input { flex: 1; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    padding: 10px 20px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { background: #00cc6a; }
+  .btn-secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .btn-secondary:hover { background: rgba(0,255,136,0.08); }
+  .btn-danger { background: var(--accent2); color: #fff; }
+  .btn-danger:hover { background: #cc3333; }
+  .btn-folder { background: var(--border); color: var(--text); border: 1px solid #444; padding: 10px 16px; }
+  .btn-folder:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn-row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+
+  .disk-info {
+    margin-top: 10px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .disk-info.warn { color: var(--warn); }
+  .disk-info.danger { color: var(--accent2); }
+
+  .anime-result {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-top: 14px;
+    overflow: hidden;
+  }
+
+  .anime-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+  }
+
+  .anime-header:hover { background: var(--surface); }
+  .anime-name { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: var(--accent); }
+  .anime-meta { font-size: 0.75rem; color: var(--muted); }
+  .anime-skipped .anime-name { color: var(--accent2); }
+  .anime-skipped .anime-meta { color: var(--accent2); }
+
+  .episode-list { max-height: 220px; overflow-y: auto; display: none; }
+  .episode-list.open { display: block; }
+
+  .episode-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .episode-item:last-child { border-bottom: none; }
+  .episode-item:hover { background: var(--surface); }
+  .episode-item.selected { background: rgba(0,255,136,0.06); }
+  .episode-item input[type="checkbox"] { accent-color: var(--accent); flex-shrink: 0; }
+
+  .ep-actions {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .ep-actions button {
+    font-size: 0.7rem;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 3px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .ep-actions button:hover { border-color: var(--accent); color: var(--accent); }
+
+  .progress-wrap {
+    background: var(--border);
+    border-radius: 4px;
+    height: 6px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.4s ease;
+    border-radius: 4px;
+  }
+
+  #status-msg {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--accent);
+    margin-top: 10px;
+    min-height: 1.2em;
+    word-break: break-all;
+  }
+
+  .hint { font-size: 0.75rem; color: var(--muted); margin-top: 6px; }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>WCO DOWNLOADER</h1>
+  <p class="subtitle">Search anime by name → auto-find dubbed → download → upload to Internet Archive</p>
+
+  <!-- Step 1 -->
+  <div class="section">
+    <div class="section-title">01 — Anime Names</div>
+    <label>Enter one or more anime names, separated by commas</label>
+    <input type="text" id="anime-names" placeholder="Naruto, Dragon Ball Z, One Piece" />
+    <p class="hint">Automatically picks the dubbed version. Skips any that only have subs.</p>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="searchAnime()">Search</button>
+    </div>
+    <div id="results-container"></div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="section">
+    <div class="section-title">02 — Download Folder</div>
+    <label>Choose where to save the files</label>
+    <div class="folder-row">
+      <input type="text" id="download_dir" placeholder="/Users/luke/Downloads/anime" oninput="updateDiskInfo()" />
+      <button class="btn btn-folder" onclick="pickFolder()">Browse</button>
+    </div>
+    <p class="hint">Type a path or click Browse to pick a folder.</p>
+    <div class="disk-info" id="disk-info"></div>
+    <input type="file" id="folder-picker" webkitdirectory style="display:none" onchange="folderPicked(this)" />
+  </div>
+
+  <!-- Step 3 -->
+  <div class="section">
+    <div class="section-title">03 — Download Options</div>
+    <label>Max episodes to download (optional — leave blank for all)</label>
+    <input type="number" id="ep_limit" placeholder="e.g. 50" min="1" oninput="updateDiskInfo()" />
+    <p class="hint">Episodes are estimated at 30MB each. Download stops automatically if disk space drops below 1GB free.</p>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="section">
+    <div class="section-title">04 — Internet Archive</div>
+    <label>Identifier (unique ID, no spaces)</label>
+    <input type="text" id="ia_identifier" placeholder="my-anime-collection" />
+    <label>Title</label>
+    <input type="text" id="ia_title" placeholder="My Anime Collection" />
+    <label>Description</label>
+    <textarea id="ia_description" placeholder="Optional description..."></textarea>
+    <div class="btn-row">
+      <button class="btn btn-danger" onclick="startDownload()">Download & Upload</button>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="section">
+    <div class="section-title">Status</div>
+    <div class="progress-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div id="status-msg">Ready</div>
+  </div>
+</div>
+
+<script>
+  let searchResults = [];
+
+  function pickFolder() {
+    document.getElementById('folder-picker').click();
+  }
+
+  function folderPicked(input) {
+    if (input.files && input.files.length > 0) {
+      const file = input.files[0];
+      const fullPath = file.path ? file.path.replace('/' + file.name, '') : '';
+      if (fullPath) {
+        document.getElementById('download_dir').value = fullPath;
+      } else {
+        const rel = file.webkitRelativePath.split('/')[0];
+        document.getElementById('download_dir').value = rel;
+        setStatus('Folder selected: ' + rel + ' — if incomplete, type the full path manually.');
+      }
+      updateDiskInfo();
+    }
+  }
+
+  function countSelectedEps() {
+    let count = 0;
+    searchResults.forEach((result, ri) => {
+      if (result.skipped) return;
+      result.episodes.forEach((_, ei) => {
+        const cb = document.getElementById(`epcheck-${ri}-${ei}`);
+        if (cb && cb.checked) count++;
+      });
+    });
+    return count;
+  }
+
+  function updateDiskInfo() {
+    const dir = document.getElementById('download_dir').value.trim();
+    const limitVal = document.getElementById('ep_limit').value;
+    const epLimit = limitVal ? parseInt(limitVal) : null;
+    const selectedCount = countSelectedEps();
+    const effectiveCount = epLimit ? Math.min(selectedCount || epLimit, epLimit) : selectedCount;
+
+    if (!effectiveCount) {
+      document.getElementById('disk-info').textContent = '';
+      return;
+    }
+
+    const estimatedGB = (effectiveCount * 30) / 1024;
+    document.getElementById('disk-info').textContent =
+      `Estimated download size: ~${estimatedGB.toFixed(1)}GB (${effectiveCount} episodes × 30MB)`;
+  }
+
+  async function searchAnime() {
+    const names = document.getElementById('anime-names').value.trim();
+    if (!names) { alert('Enter at least one anime name'); return; }
+    setStatus('Searching...');
+    document.getElementById('results-container').innerHTML =
+      '<p style="color:var(--muted);font-size:0.8rem;margin-top:12px">Searching WCO Stream...</p>';
+
+    try {
+      const res = await fetch('/search_anime', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({names})
+      });
+      const data = await res.json();
+      if (data.error) { setStatus('Error: ' + data.error); return; }
+      searchResults = data.results;
+      renderResults();
+      const found = searchResults.filter(r => !r.skipped).length;
+      const skipped = searchResults.filter(r => r.skipped).length;
+      setStatus(`Found dubbed episodes for ${found} anime${skipped ? `, skipped ${skipped}` : ''}`);
+      updateDiskInfo();
+    } catch(e) {
+      setStatus('Error: ' + e.message);
+      document.getElementById('results-container').innerHTML = '';
+    }
+  }
+
+  function renderResults() {
+    const container = document.getElementById('results-container');
+    container.innerHTML = '';
+
+    searchResults.forEach((result, ri) => {
+      const div = document.createElement('div');
+      div.className = 'anime-result' + (result.skipped ? ' anime-skipped' : '');
+
+      if (result.skipped) {
+        div.innerHTML = `
+          <div class="anime-header">
+            <span class="anime-name">✕ ${result.name}</span>
+            <span class="anime-meta">No dubbed version found — skipped</span>
+          </div>`;
+      } else {
+        div.innerHTML = `
+          <div class="anime-header" onclick="toggleEpisodes(${ri})">
+            <span class="anime-name">▸ ${result.name}</span>
+            <span class="anime-meta">${result.episode_count} episodes — click to expand</span>
+          </div>
+          <div class="episode-list" id="eplist-${ri}">
+            <div class="ep-actions">
+              <button onclick="selectAllEps(${ri})">Select All</button>
+              <button onclick="selectNoneEps(${ri})">Select None</button>
+            </div>
+            ${result.episodes.map((ep, ei) => `
+              <div class="episode-item selected" id="epitem-${ri}-${ei}" onclick="toggleEp(${ri},${ei})">
+                <input type="checkbox" id="epcheck-${ri}-${ei}" checked onclick="event.stopPropagation(); updateDiskInfo()">
+                <span>${ep.title}</span>
+              </div>
+            `).join('')}
+          </div>`;
+      }
+
+      container.appendChild(div);
+    });
+  }
+
+  function toggleEpisodes(ri) {
+    const list = document.getElementById(`eplist-${ri}`);
+    list.classList.toggle('open');
+    const name = list.previousElementSibling.querySelector('.anime-name');
+    name.textContent = name.textContent.replace(/^[▸▾]/, list.classList.contains('open') ? '▾' : '▸');
+  }
+
+  function toggleEp(ri, ei) {
+    const cb = document.getElementById(`epcheck-${ri}-${ei}`);
+    const item = document.getElementById(`epitem-${ri}-${ei}`);
+    cb.checked = !cb.checked;
+    item.classList.toggle('selected', cb.checked);
+    updateDiskInfo();
+  }
+
+  function selectAllEps(ri) {
+    searchResults[ri].episodes.forEach((_, ei) => {
+      document.getElementById(`epcheck-${ri}-${ei}`).checked = true;
+      document.getElementById(`epitem-${ri}-${ei}`).classList.add('selected');
+    });
+    updateDiskInfo();
+  }
+
+  function selectNoneEps(ri) {
+    searchResults[ri].episodes.forEach((_, ei) => {
+      document.getElementById(`epcheck-${ri}-${ei}`).checked = false;
+      document.getElementById(`epitem-${ri}-${ei}`).classList.remove('selected');
+    });
+    updateDiskInfo();
+  }
+
+  async function startDownload() {
+    const jobs = [];
+    searchResults.forEach((result, ri) => {
+      if (result.skipped) return;
+      const selected = result.episodes.filter((_, ei) => {
+        const cb = document.getElementById(`epcheck-${ri}-${ei}`);
+        return cb && cb.checked;
+      });
+      if (selected.length) jobs.push({name: result.name, episodes: selected});
+    });
+
+    if (!jobs.length) { alert('No episodes selected'); return; }
+
+    const epLimitVal = document.getElementById('ep_limit').value;
+    const payload = {
+      jobs,
+      download_dir: document.getElementById('download_dir').value.trim(),
+      ia_identifier: document.getElementById('ia_identifier').value.trim(),
+      ia_title: document.getElementById('ia_title').value.trim(),
+      ia_description: document.getElementById('ia_description').value.trim(),
+      ep_limit: epLimitVal ? parseInt(epLimitVal) : null
+    };
+
+    try {
+      const res = await fetch('/download', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.error) { setStatus('Error: ' + data.error); return; }
+      pollStatus();
+    } catch(e) {
+      setStatus('Error: ' + e.message);
+    }
+  }
+
+  function pollStatus() {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/status');
+        const data = await res.json();
+        setStatus(data.message, data.progress);
+        if (data.progress === 100) clearInterval(interval);
+      } catch(e) { clearInterval(interval); }
+    }, 1000);
+  }
+
+  function setStatus(msg, progress) {
+    document.getElementById('status-msg').textContent = msg;
+    if (progress !== undefined) {
+      document.getElementById('progress-bar').style.width = progress + '%';
+    }
+  }
+</script>
+</body>
+</html>
