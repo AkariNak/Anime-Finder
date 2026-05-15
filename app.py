@@ -6,7 +6,7 @@ import re
 import shutil
 from bs4 import BeautifulSoup
 from internetarchive import upload
-from urllib.parse import urljoin, quote_plus
+from urllib.parse import urljoin
 from flask import Flask, request, jsonify, send_from_directory
 
 app = Flask(__name__, template_folder='.')
@@ -15,6 +15,10 @@ status = {"message": "Ready", "progress": 0}
 
 EPISODE_SIZE_ESTIMATE_MB = 30
 MIN_FREE_SPACE_GB = 1
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
 
 def free_space_gb(path):
     try:
@@ -26,61 +30,48 @@ def free_space_gb(path):
 def is_dubbed(episodes):
     return any('dub' in ep['title'].lower() for ep in episodes)
 
-def has_only_sub(episodes):
-    has_sub = any('sub' in ep['title'].lower() for ep in episodes)
-    has_dub = any('dub' in ep['title'].lower() for ep in episodes)
-    return has_sub and not has_dub
+def get_anime_name_from_url(url):
+    # Extract name from slug e.g. https://www.wco.tv/anime/death-note -> Death Note
+    slug = url.rstrip('/').split('/')[-1]
+    return slug.replace('-', ' ').title()
 
-def search_anime(name):
-    base_url = "https://www.wcostream.net"
-    search_url = f"{base_url}/search?q={quote_plus(name)}"
+def fetch_episodes(url):
     try:
-        resp = requests.get(search_url, timeout=10)
+        resp = requests.get(url, headers=HEADERS, timeout=15)
         soup = BeautifulSoup(resp.content, 'html.parser')
-        results = soup.select('div.search-result a, ul.items li a, .listing a')
 
-        checked = 0
-        for result in results[:5]:
-            href = result.get('href', '')
-            result_name = result.text.strip().lower()
-            if name.lower() not in result_name and result_name not in name.lower():
+        # Try common episode list selectors for wco.tv
+        selectors = [
+            'div.videos-list a',
+            'ul.listing a',
+            'div.cat-eps a',
+            'div#sidebar_right3 ul li a',
+            '.episodes-list a',
+            'a[href*="/episode"]'
+        ]
+
+        ep_links = []
+        for selector in selectors:
+            ep_links = soup.select(selector)
+            if ep_links:
+                break
+
+        if not ep_links:
+            return []
+
+        base = 'https://www.wco.tv'
+        episodes = []
+        for link in ep_links:
+            href = link.get('href', '')
+            title = link.text.strip()
+            if not href or not title:
                 continue
-            anime_url = urljoin(base_url, href)
-            try:
-                page = requests.get(anime_url, timeout=10)
-                page_soup = BeautifulSoup(page.content, 'html.parser')
-                ep_links = page_soup.select('div.videos-list a')
-                eps = [{'title': l.text.strip(), 'url': urljoin(base_url, l['href'])} for l in ep_links]
-                if not eps:
-                    continue
-                if is_dubbed(eps):
-                    return anime_url, eps
-                elif has_only_sub(eps):
-                    checked += 1
-                    if checked >= 2:
-                        return None, []
-                    continue
-                else:
-                    return anime_url, eps
-            except:
-                continue
+            full_url = urljoin(base, href)
+            episodes.append({'title': title, 'url': full_url})
 
-        # fallback: direct slug
-        slug = name.lower().strip().replace(' ', '-')
-        anime_url = f"{base_url}/anime/{slug}"
-        try:
-            page = requests.get(anime_url, timeout=10)
-            page_soup = BeautifulSoup(page.content, 'html.parser')
-            ep_links = page_soup.select('div.videos-list a')
-            eps = [{'title': l.text.strip(), 'url': urljoin(base_url, l['href'])} for l in ep_links]
-            if eps and is_dubbed(eps):
-                return anime_url, eps
-        except:
-            pass
-
-        return None, []
+        return episodes
     except Exception as e:
-        return None, []
+        return []
 
 @app.route('/')
 def index():
@@ -89,18 +80,32 @@ def index():
 @app.route('/search_anime', methods=['POST'])
 def search_anime_route():
     data = request.json
-    names_raw = data.get('names', '')
-    names = [n.strip() for n in names_raw.split(',') if n.strip()]
-    if not names:
-        return jsonify({'error': 'Please enter at least one anime name'}), 400
+    urls_raw = data.get('urls', '')
+    urls = [u.strip() for u in urls_raw.split(',') if u.strip()]
+
+    if not urls:
+        return jsonify({'error': 'Please enter at least one URL'}), 400
 
     results = []
-    for name in names:
-        url, eps = search_anime(name)
-        if url and eps:
-            results.append({'name': name, 'url': url, 'episode_count': len(eps), 'episodes': eps})
+    for url in urls:
+        name = get_anime_name_from_url(url)
+        eps = fetch_episodes(url)
+
+        if not eps:
+            results.append({'name': name, 'url': url, 'episode_count': 0, 'episodes': [], 'skipped': True, 'reason': 'Could not find episodes'})
+            continue
+
+        # Filter to dubbed only if mixed
+        dubbed_eps = [e for e in eps if 'dub' in e['title'].lower()]
+        if dubbed_eps:
+            use_eps = dubbed_eps
+        elif any('sub' in e['title'].lower() for e in eps):
+            results.append({'name': name, 'url': url, 'episode_count': 0, 'episodes': [], 'skipped': True, 'reason': 'Only subbed episodes found'})
+            continue
         else:
-            results.append({'name': name, 'url': None, 'episode_count': 0, 'episodes': [], 'skipped': True})
+            use_eps = eps  # no sub/dub labels, use all
+
+        results.append({'name': name, 'url': url, 'episode_count': len(use_eps), 'episodes': use_eps, 'skipped': False})
 
     return jsonify({'results': results})
 
@@ -116,7 +121,7 @@ def start_download():
     ia_identifier = data.get('ia_identifier', '').strip()
     ia_title = data.get('ia_title', '').strip()
     ia_description = data.get('ia_description', '').strip()
-    ep_limit = data.get('ep_limit')  # optional int or None
+    ep_limit = data.get('ep_limit')
 
     if not jobs:
         return jsonify({'error': 'No episodes selected'}), 400
@@ -130,7 +135,6 @@ def start_download():
     if not ia_identifier or not ia_title:
         return jsonify({'error': 'Internet Archive identifier and title required'}), 400
 
-    # Pre-flight disk space check
     total_eps = sum(len(j['episodes']) for j in jobs)
     if ep_limit:
         total_eps = min(total_eps, int(ep_limit))
@@ -153,7 +157,7 @@ def start_download():
 
 def download_and_upload(jobs, download_dir, ia_identifier, ia_title, ia_description, ep_limit):
     global status
-    # Flatten all episodes respecting ep_limit
+
     all_jobs = []
     for job in jobs:
         for ep in job['episodes']:
@@ -169,7 +173,6 @@ def download_and_upload(jobs, download_dir, ia_identifier, ia_title, ia_descript
         title = ep['title']
         episode_url = ep['url']
 
-        # Check disk space before each download
         free = free_space_gb(download_dir)
         if free <= MIN_FREE_SPACE_GB:
             status['message'] = f"Stopped: less than 1GB free on disk. Downloaded {done} of {total} episodes."
@@ -180,7 +183,7 @@ def download_and_upload(jobs, download_dir, ia_identifier, ia_title, ia_descript
         status['progress'] = int((done / total) * 80)
 
         try:
-            response = requests.get(episode_url, timeout=10)
+            response = requests.get(episode_url, headers=HEADERS, timeout=15)
             soup = BeautifulSoup(response.content, 'html.parser')
 
             video_url = None
