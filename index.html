@@ -86,8 +86,6 @@
   .folder-row { display: flex; gap: 8px; align-items: stretch; }
   .folder-row input { flex: 1; }
 
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-
   .btn {
     font-family: 'Space Mono', monospace;
     font-size: 0.75rem;
@@ -102,8 +100,6 @@
 
   .btn-primary { background: var(--accent); color: #000; }
   .btn-primary:hover { background: #00cc6a; }
-  .btn-secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  .btn-secondary:hover { background: rgba(0,255,136,0.08); }
   .btn-danger { background: var(--accent2); color: #fff; }
   .btn-danger:hover { background: #cc3333; }
   .btn-folder { background: var(--border); color: var(--text); border: 1px solid #444; padding: 10px 16px; }
@@ -117,9 +113,6 @@
     color: var(--muted);
     font-family: 'Space Mono', monospace;
   }
-
-  .disk-info.warn { color: var(--warn); }
-  .disk-info.danger { color: var(--accent2); }
 
   .anime-result {
     background: var(--bg);
@@ -219,16 +212,16 @@
 <body>
 <div class="container">
   <h1>WCO DOWNLOADER</h1>
-  <p class="subtitle">Search anime by name → auto-find dubbed → download → upload to Internet Archive</p>
+  <p class="subtitle">Paste anime page URLs → download dubbed episodes → upload to Internet Archive</p>
 
   <!-- Step 1 -->
   <div class="section">
-    <div class="section-title">01 — Anime Names</div>
-    <label>Enter one or more anime names, separated by commas</label>
-    <input type="text" id="anime-names" placeholder="Naruto, Dragon Ball Z, One Piece" />
-    <p class="hint">Automatically picks the dubbed version. Skips any that only have subs.</p>
+    <div class="section-title">01 — Anime URLs</div>
+    <label>Paste one or more wco.tv anime page URLs, separated by commas</label>
+    <textarea id="anime-urls" rows="3" placeholder="https://www.wco.tv/anime/death-note, https://www.wco.tv/anime/naruto"></textarea>
+    <p class="hint">Goes straight to the page and pulls all dubbed episodes. Skips any that only have subs.</p>
     <div class="btn-row">
-      <button class="btn btn-primary" onclick="searchAnime()">Search</button>
+      <button class="btn btn-primary" onclick="searchAnime()">Get Episodes</button>
     </div>
     <div id="results-container"></div>
   </div>
@@ -251,7 +244,7 @@
     <div class="section-title">03 — Download Options</div>
     <label>Max episodes to download (optional — leave blank for all)</label>
     <input type="number" id="ep_limit" placeholder="e.g. 50" min="1" oninput="updateDiskInfo()" />
-    <p class="hint">Episodes are estimated at 30MB each. Download stops automatically if disk space drops below 1GB free.</p>
+    <p class="hint">Episodes estimated at 30MB each. Stops automatically if disk space drops below 1GB free.</p>
   </div>
 
   <!-- Step 4 -->
@@ -313,34 +306,28 @@
   }
 
   function updateDiskInfo() {
-    const dir = document.getElementById('download_dir').value.trim();
     const limitVal = document.getElementById('ep_limit').value;
     const epLimit = limitVal ? parseInt(limitVal) : null;
     const selectedCount = countSelectedEps();
     const effectiveCount = epLimit ? Math.min(selectedCount || epLimit, epLimit) : selectedCount;
-
-    if (!effectiveCount) {
-      document.getElementById('disk-info').textContent = '';
-      return;
-    }
-
+    if (!effectiveCount) { document.getElementById('disk-info').textContent = ''; return; }
     const estimatedGB = (effectiveCount * 30) / 1024;
     document.getElementById('disk-info').textContent =
       `Estimated download size: ~${estimatedGB.toFixed(1)}GB (${effectiveCount} episodes × 30MB)`;
   }
 
   async function searchAnime() {
-    const names = document.getElementById('anime-names').value.trim();
-    if (!names) { alert('Enter at least one anime name'); return; }
-    setStatus('Searching...');
+    const urls = document.getElementById('anime-urls').value.trim();
+    if (!urls) { alert('Enter at least one URL'); return; }
+    setStatus('Fetching episodes...');
     document.getElementById('results-container').innerHTML =
-      '<p style="color:var(--muted);font-size:0.8rem;margin-top:12px">Searching WCO Stream...</p>';
+      '<p style="color:var(--muted);font-size:0.8rem;margin-top:12px">Loading episode lists...</p>';
 
     try {
       const res = await fetch('/search_anime', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({names})
+        body: JSON.stringify({urls})
       });
       const data = await res.json();
       if (data.error) { setStatus('Error: ' + data.error); return; }
@@ -348,7 +335,7 @@
       renderResults();
       const found = searchResults.filter(r => !r.skipped).length;
       const skipped = searchResults.filter(r => r.skipped).length;
-      setStatus(`Found dubbed episodes for ${found} anime${skipped ? `, skipped ${skipped}` : ''}`);
+      setStatus(`Loaded ${found} anime${skipped ? `, skipped ${skipped}` : ''}`);
       updateDiskInfo();
     } catch(e) {
       setStatus('Error: ' + e.message);
@@ -368,7 +355,7 @@
         div.innerHTML = `
           <div class="anime-header">
             <span class="anime-name">✕ ${result.name}</span>
-            <span class="anime-meta">No dubbed version found — skipped</span>
+            <span class="anime-meta">${result.reason || 'Skipped'}</span>
           </div>`;
       } else {
         div.innerHTML = `
@@ -389,7 +376,6 @@
             `).join('')}
           </div>`;
       }
-
       container.appendChild(div);
     });
   }
@@ -455,7 +441,7 @@
         body: JSON.stringify(payload)
       });
       const data = await res.json();
-      if (data.error) { setStatus('Error: ' + data.error); return; }
+      if (data.error) { setStatus('❌ ' + data.error); return; }
       pollStatus();
     } catch(e) {
       setStatus('Error: ' + e.message);
